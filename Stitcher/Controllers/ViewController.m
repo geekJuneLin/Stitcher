@@ -13,6 +13,8 @@
 
 @interface ViewController ()
 
+@property (nonatomic, strong) UIImageView *centerImg;
+
 @end
 
 @implementation ViewController
@@ -61,18 +63,18 @@
     self.view.backgroundColor = [UIColor colorWithRed:0.22 green:0.5 blue:0.72 alpha:1];
     
     // set up center UIImageView
-    UIImageView *centerImg = [[UIImageView alloc] init];
-    centerImg.image = [UIImage imageNamed: @"sloth2"];
-    centerImg.layer.masksToBounds = true;
-    centerImg.layer.cornerRadius = 10;
-    centerImg.translatesAutoresizingMaskIntoConstraints = false;
-    [self.view addSubview:centerImg];
+    _centerImg = [[UIImageView alloc] init];
+    _centerImg.image = [UIImage imageNamed: @"sloth2"];
+    _centerImg.layer.masksToBounds = true;
+    _centerImg.layer.cornerRadius = 10;
+    _centerImg.translatesAutoresizingMaskIntoConstraints = false;
+    [self.view addSubview:_centerImg];
     
 //    [centerImg anchors:self.view.centerXAnchor centerXConstant:0 withCenterY:self.view.centerYAnchor centerYConstant:0 withTop:nil topConstant:0 withBottom:nil bottomConstant:0 withLeft:nil leftConstant:0 withRight:nil rightConstant: 0];
-    [centerImg.widthAnchor constraintEqualToAnchor:self.view.widthAnchor multiplier:0.8].active = true;
-    [centerImg.heightAnchor constraintEqualToAnchor:self.view.heightAnchor multiplier:0.25].active = true;
-    [centerImg.centerXAnchor constraintEqualToAnchor:self.view.centerXAnchor].active = true;
-    [centerImg.centerYAnchor constraintEqualToAnchor:self.view.centerYAnchor].active = true;
+    [_centerImg.widthAnchor constraintEqualToAnchor:self.view.widthAnchor multiplier:0.8].active = true;
+    [_centerImg.heightAnchor constraintEqualToAnchor:self.view.heightAnchor multiplier:0.25].active = true;
+    [_centerImg.centerXAnchor constraintEqualToAnchor:self.view.centerXAnchor].active = true;
+    [_centerImg.centerYAnchor constraintEqualToAnchor:self.view.centerYAnchor].active = true;
 }
 
 
@@ -80,13 +82,50 @@
 -(void)checkIfThereAreScreenshots{
     NSLog(@"checking if there are screenshots exsit in albumn");
     
-    PHFetchOptions *oderedOption = [[PHFetchOptions alloc] init];
-    oderedOption.sortDescriptors = @[[NSSortDescriptor sortDescriptorWithKey:@"creationDate" ascending:YES]];
+    // specify the certain start and end date to be searched
+    NSDate *startDate = [NSDate.now dateByAddingTimeInterval:-(60 * 60 * 24)];
+    NSDate *endDate = NSDate.now;
     
-    PHFetchResult *results = [PHAsset fetchAssetsWithMediaType:PHAssetMediaTypeImage options:oderedOption];
+    // specify the search options for searching
+    PHFetchOptions *orderedOption = [[PHFetchOptions alloc] init];
+    orderedOption.sortDescriptors = @[[NSSortDescriptor sortDescriptorWithKey:@"creationDate" ascending:YES]];
+    orderedOption.predicate = [NSPredicate predicateWithFormat:@"creationDate > %@ AND creationDate < %@" argumentArray:[NSArray arrayWithObjects:startDate, endDate, nil]];
+    
+    // fetch the preset searching options results
+    PHFetchResult *results = [PHAsset fetchAssetsWithMediaType:PHAssetMediaTypeImage options:orderedOption];
     [results enumerateObjectsUsingBlock:^(id  _Nonnull obj, NSUInteger idx, BOOL * _Nonnull stop) {
-        NSLog(@"Asset: %@", obj);
+        NSLog(@"Type: %lu", (unsigned long)[obj mediaSubtypes]);
+        
+        // check if the image is screenshot
+        if([obj mediaSubtypes] == 4){
+            [self convertPHAssetToImage: results[0]];
+        }
     }];
+    
+    // release the variables
+    orderedOption = nil;
+    startDate = nil;
+    endDate = nil;
+}
+
+-(void)convertPHAssetToImage: (PHAsset *) asset{
+    PHImageRequestOptions *imageOptions = PHImageRequestOptions.new;
+    [imageOptions setSynchronous:true];
+    [imageOptions setVersion: PHImageRequestOptionsVersionCurrent];
+    [imageOptions setDeliveryMode:PHImageRequestOptionsDeliveryModeOpportunistic];
+    [imageOptions setResizeMode:PHImageRequestOptionsResizeModeNone];
+    
+    PHImageManager *imageManager = [PHImageManager defaultManager];
+    [imageManager requestImageForAsset:asset
+                            targetSize:PHImageManagerMaximumSize
+                           contentMode:PHImageContentModeDefault
+                               options:imageOptions
+                         resultHandler:^(UIImage * _Nullable result, NSDictionary * _Nullable info) {
+                            self->_centerImg.image = result;
+                        }];
+    
+    imageOptions = nil;
+    imageManager = nil;
 }
 
 
