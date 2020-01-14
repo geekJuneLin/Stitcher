@@ -13,7 +13,7 @@
 
 @interface ViewController ()
 
-@property (nonatomic, strong) UIImageView *centerImg;
+@property (nonatomic, strong) UIScrollView *centerImg;
 
 @end
 
@@ -63,16 +63,14 @@
     self.view.backgroundColor = [UIColor colorWithRed:0.22 green:0.5 blue:0.72 alpha:1];
     
     // set up center UIImageView
-    _centerImg = [[UIImageView alloc] init];
-    _centerImg.image = [UIImage imageNamed: @"sloth2"];
+    _centerImg = [[UIScrollView alloc] init];
     _centerImg.layer.masksToBounds = true;
     _centerImg.layer.cornerRadius = 10;
     _centerImg.translatesAutoresizingMaskIntoConstraints = false;
     [self.view addSubview:_centerImg];
     
-//    [centerImg anchors:self.view.centerXAnchor centerXConstant:0 withCenterY:self.view.centerYAnchor centerYConstant:0 withTop:nil topConstant:0 withBottom:nil bottomConstant:0 withLeft:nil leftConstant:0 withRight:nil rightConstant: 0];
-    [_centerImg.widthAnchor constraintEqualToAnchor:self.view.widthAnchor multiplier:0.8].active = true;
-    [_centerImg.heightAnchor constraintEqualToAnchor:self.view.heightAnchor multiplier:0.25].active = true;
+    [_centerImg.widthAnchor constraintEqualToAnchor:self.view.widthAnchor].active = true;
+    [_centerImg.heightAnchor constraintEqualToAnchor:self.view.heightAnchor].active = true;
     [_centerImg.centerXAnchor constraintEqualToAnchor:self.view.centerXAnchor].active = true;
     [_centerImg.centerYAnchor constraintEqualToAnchor:self.view.centerYAnchor].active = true;
 }
@@ -81,6 +79,8 @@
 // MARK: - other functions
 -(void)checkIfThereAreScreenshots{
     NSLog(@"checking if there are screenshots exsit in albumn");
+    
+    __block NSMutableArray *screenshots = NSMutableArray.new;
     
     // specify the certain start and end date to be searched
     NSDate *startDate = [NSDate.now dateByAddingTimeInterval:-(60 * 60 * 24)];
@@ -98,9 +98,24 @@
         
         // check if the image is screenshot
         if([obj mediaSubtypes] == 4){
-            [self convertPHAssetToImage: results[0]];
+            [screenshots addObject:[self convertPHAssetToImage: obj]];
         }
     }];
+    
+    // check if images are overlapped
+    for(int i=0; i<screenshots.count; i++){
+        if(i < (screenshots.count - 1)){
+            if([self checkIntersection:screenshots[i] withImage:screenshots[i + 1]]){
+                NSLog(@"Images are intersected");
+            }else{
+                NSLog(@"There are some images not intersected");
+            }
+        }
+    }
+    
+    // merge all the screenshots and save to photo library
+    [self mergeImages: screenshots];
+    NSLog(@"There are %lu screenshots", screenshots.count);
     
     // release the variables
     orderedOption = nil;
@@ -108,26 +123,68 @@
     endDate = nil;
 }
 
--(void)convertPHAssetToImage: (PHAsset *) asset{
+/// convert PHAsset to UIImage
+/// @param asset The PHAsset need to be converted
+-(UIImage *)convertPHAssetToImage: (PHAsset *) asset{
+    __block UIImage *convertedImage;
+    
     PHImageRequestOptions *imageOptions = PHImageRequestOptions.new;
     [imageOptions setSynchronous:true];
-    [imageOptions setVersion: PHImageRequestOptionsVersionCurrent];
-    [imageOptions setDeliveryMode:PHImageRequestOptionsDeliveryModeOpportunistic];
-    [imageOptions setResizeMode:PHImageRequestOptionsResizeModeNone];
+    [imageOptions setVersion: PHImageRequestOptionsVersionOriginal];
+    [imageOptions setDeliveryMode:PHImageRequestOptionsDeliveryModeHighQualityFormat];
+    [imageOptions setResizeMode:PHImageRequestOptionsResizeModeExact];
     
     PHImageManager *imageManager = [PHImageManager defaultManager];
     [imageManager requestImageForAsset:asset
-                            targetSize:PHImageManagerMaximumSize
-                           contentMode:PHImageContentModeDefault
+                            targetSize: CGSizeMake(UIScreen.mainScreen.bounds.size.width * 0.8, UIScreen.mainScreen.bounds.size.height * 0.8)
+                           contentMode:PHImageContentModeAspectFit
                                options:imageOptions
                          resultHandler:^(UIImage * _Nullable result, NSDictionary * _Nullable info) {
-                            self->_centerImg.image = result;
+                            convertedImage = result;
                         }];
     
     imageOptions = nil;
     imageManager = nil;
+    return convertedImage;
 }
 
+
+/// check if those two images are intersected
+/// @param image1 the first image
+/// @param image2 the second image
+-(BOOL)checkIntersection: (UIImage *) image1 withImage: (UIImage *) image2{
+    return CGRectIntersectsRect(image1.accessibilityFrame, image2.accessibilityFrame);
+}
+
+/// loop through all the images in the array, and stitch them vertically
+/// once the process is done then will save the stitched image to photo library
+/// @param images the array of images need to be stitched
+-(void)mergeImages: (NSArray *) images{
+    UIImageView *mergedView = UIImageView.new;
+    mergedView.frame = CGRectMake(0, 0, UIScreen.mainScreen.bounds.size.width, UIScreen.mainScreen.bounds.size.height * images.count);
+    
+    CGSize size = CGSizeMake(UIScreen.mainScreen.bounds.size.width, UIScreen.mainScreen.bounds.size.height * images.count);
+    UIGraphicsBeginImageContext(size);
+    
+    for (UIImage *image in images){
+        [image drawInRect:CGRectMake(0, [images indexOfObject:image] * size.height / images.count, size.width, size.height / images.count)];
+    }
+    
+    UIImage *mergedImage = UIGraphicsGetImageFromCurrentImageContext();
+    UIGraphicsEndImageContext();
+    
+    mergedView.image = mergedImage;
+    [_centerImg addSubview:mergedView];
+    _centerImg.contentSize = mergedView.bounds.size;
+    
+    [self saveImageToLibrary:mergedImage];
+}
+
+/// save the image to photo library
+/// @param image the image need to be saved
+-(void)saveImageToLibrary: (UIImage *)image{
+    UIImageWriteToSavedPhotosAlbum(image, nil, nil, nil);
+}
 
 // MARK: - selector functions
 -(void)handleLeftBtnClick{
@@ -136,6 +193,29 @@
 
 -(void)handleRightBtnClick{
     NSLog(@"Right button pressed...");
+}
+
+
+// TODO: get the intersection of the images
+-(void)getIntersection: (UIImage *) image1 withImage: (UIImage *) image2{
+    UIImageView *v1 = UIImageView.new;
+    [v1 setFrame:CGRectMake(0, 0, UIScreen.mainScreen.bounds.size.width, UIScreen.mainScreen.bounds.size.height)];
+//    v1.frame = ;
+    v1.image = image1;
+    [self.view addSubview:v1];
+    
+    UIImageView *v2 = UIImageView.new;
+    [v1 setFrame:CGRectMake(0, 0, UIScreen.mainScreen.bounds.size.width, UIScreen.mainScreen.bounds.size.height)];
+//    v2.frame = CGRectMake(0, 0, UIScreen.mainScreen.bounds.size.width, UIScreen.mainScreen.bounds.size.height);
+    v2.image = image2;
+    [self.view addSubview:v2];
+    
+    CGRect intersection = CGRectIntersection(v1.frame, v2.frame);
+    if(!CGRectIsNull(intersection)){
+        NSLog(@"intersection: %@", NSStringFromCGRect(intersection));
+    }else{
+        NSLog(@"No intersection found!");
+    }
 }
 
 @end
